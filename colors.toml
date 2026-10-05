@@ -1,0 +1,46 @@
+mode = "dark"
+
+# ACID RAIN — rain-slick neon noir. Three pure, fully-saturated hues
+# (magenta / cyan / radioactive green) on ink-black violet.
+#
+# Keyboard note: RGB-sync tools (Razer Shortcut Lights, the OpenRGB hook)
+# rank a theme's colors by chroma. Magenta, cyan and green below are the only
+# colors at full chroma; everything else is deliberately a notch under, so the
+# keys light up in exactly this trio instead of drifting to stray hues.
+# Order matters too: accent first, then cyan, then green.
+
+accent = "#ff00c8"
+selection = "#3a0a52"
+muted = "#5b3a8c"
+
+background = "#07030f"
+dark_background = "#04020a"
+darker_background = "#020105"
+lighter_background = "#150a2b"
+
+foreground = "#cdf8ff"
+dark_foreground = "#6d9db0"
+light_foreground = "#e4fcff"
+bright_foreground = "#ffffff"
+
+cyan = "#00f0ff"
+green = "#39ff14"
+magenta = "#ff00c8"
+
+red = "#ff2a6d"
+yellow = "#d4f53c"
+orange = "#ff7a3d"
+blue = "#7b3bff"
+brown = "#8a4a7a"
+
+bright_cyan = "#7dfaff"
+bright_green = "#9bff7a"
+bright_magenta = "#ff6be0"
+bright_red = "#ff6b95"
+bright_yellow = "#e6ff7a"
+bright_blue = "#a98bff"
+
+# Triple-neon diagonal border: magenta -> cyan -> radioactive green. Mirrored
+# onto the lock screen, menus, notifications and popups by the shell.
+hyprland_active_border = "rgba(ff00c8ee) rgba(00f0ffee) rgba(39ff14ee) 45deg"
+hyprland_inactive_border = "rgba(3a0a52aa)"
