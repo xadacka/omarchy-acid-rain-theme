@@ -12,11 +12,17 @@ Think rain-soaked megacity, holo-signage and a leaking reactor.
   Neovim, Helix, VS Code, Chromium, notifications, all from one file.
 - **Triple-neon window border** — a 45° magenta → cyan → green gradient on the
   focused window, mirrored onto lock/menu/popup borders.
-- **Three procedurally generated 4K wallpapers** in `backgrounds/`:
+- **Eight procedurally generated 4K wallpapers** in `backgrounds/`, from calm
+  to busy. `0-liquid-neon` is the default: soft, blurry, wavy ribbons of light
+  that keep text readable. Cycle with `omarchy theme bg next`.
+  0. `0-liquid-neon` — out-of-focus wavy light ribbons (default)
   1. `1-rain-district` — neon megacity in acid rain, holo-ring, wet-street mirror
   2. `2-datastorm` — flowing neon data streams on black
   3. `3-reactor-core` — nested hex rings around a radioactive core, glitch tears
-  Cycle with `omarchy theme bg next`.
+  4. `4-aurora-smog` — neon aurora curtains over a dark ridgeline
+  5. `5-bokeh-window` — rain-fogged window onto defocused neon city lights
+  6. `6-wireframe-terrain` — vector mountains under a radioactive sun
+  7. `7-plasma-ink` — marbled neon ink in black water
 - **Keyboard lighting that actually matches.** See below.
 
 ## Keyboard RGB

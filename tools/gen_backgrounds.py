@@ -349,12 +349,191 @@ def reactor_core():
     finish(img, rng, "3-reactor-core.jpg", vignette=0.6, aberr=5)
 
 
+def ramp(f, stops):
+    """Map f in 0..1 through [(pos, rgb)] stops -> HxWx3."""
+    pos = [q for q, _ in stops]
+    return np.stack([np.interp(f, pos, [c[i] for _, c in stops]) for i in range(3)], -1).astype(np.float32)
+
+
+def lowres_grid(w=1280):
+    h = int(w * H / W)
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    return xx / w * (W / H), yy / h, h, w  # u spans aspect, v 0..1
+
+
+def up(a, soft=0):
+    im = Image.fromarray(np.clip(a * 255, 0, 255).astype(np.uint8)).resize((W, H), Image.BICUBIC)
+    a = np.asarray(im, np.float32) / 255
+    return blur(a, soft) if soft else a
+
+
+# --------------------------------------------------------------------------
+# 0. LIQUID NEON — the calm default: soft, blurry, wavy ribbons of light
+# --------------------------------------------------------------------------
+def liquid_neon():
+    rng = np.random.default_rng(7)
+    u, v, h, w = lowres_grid(1600)
+    img = np.zeros((h, w, 3), np.float32)
+    ribbons = [  # (colour, base v, amplitude, freq, phase, width, gain)
+        (MAG, 0.36, 0.17, 1.15, 0.2, 0.17, 1.00),
+        (CYA, 0.55, 0.15, 1.45, 2.1, 0.13, 0.95),
+        (GRN, 0.74, 0.12, 0.95, 4.0, 0.10, 0.80),
+        (MAG, 0.88, 0.09, 1.80, 5.3, 0.14, 0.45),
+        (CYA, 0.16, 0.08, 1.30, 3.3, 0.12, 0.40),
+    ]
+    for col, base, amp, fr, ph, wd, gain in ribbons:
+        # domain-warped centreline: two stacked sines make it genuinely wavy
+        cl = base + amp * np.sin(u * fr * 2.4 + ph + 0.9 * np.sin(u * fr * 1.1 + v * 2.0)) \
+            + amp * 0.45 * np.sin(u * fr * 4.1 - ph * 1.3)
+        d = (v - cl) / wd
+        thick = 0.75 + 0.45 * np.sin(u * 1.7 + ph * 2.0)  # ribbon swells and thins
+        glow = np.exp(-(d / thick) ** 2) * gain
+        core = np.exp(-(d / thick) ** 2 * 9) * 0.45
+        img += col * (glow + core)[:, :, None]
+    img += (INK * 1.4 + VIO * 0.35 * noise(h, w, 2, rng)[:, :, None] ** 1.6)
+    img = up(img * 0.72)
+    img = blur(img, px(14))  # deliberately out-of-focus
+    img = bloom(img, thresh=0.5, strength=0.55)
+    finish(img, rng, "0-liquid-neon.jpg", grain=0.018, vignette=0.5, aberr=2)
+
+
+# --------------------------------------------------------------------------
+# 4. AURORA SMOG — vertical neon curtains over a dark skyline
+# --------------------------------------------------------------------------
+def aurora_smog():
+    rng = np.random.default_rng(88)
+    u, v, h, w = lowres_grid(1600)
+    img = np.zeros((h, w, 3), np.float32)
+    for k, (col, ph) in enumerate(((GRN, 0.0), (CYA, 1.7), (MAG, 3.4), (GRN, 5.0))):
+        hc = 0.38 + 0.12 * np.sin(u * (0.9 + k * 0.25) + ph) + 0.05 * np.sin(u * 3.1 + ph * 2)
+        d = (v - hc) / (0.16 + 0.05 * k)
+        rays = 0.55 + 0.45 * np.sin(u * 55 + 4 * np.sin(u * 3 + ph) + k)  # curtain folds
+        fall = np.where(v < hc, np.exp(-d ** 2 * 0.5), np.exp(-d ** 2 * 2.2))
+        img += col * (fall * rays ** 1.5 * (0.5 - k * 0.04))[:, :, None]
+    img += INK * 1.3 + VIO * 0.4 * noise(h, w, 3, rng)[:, :, None] ** 2
+    img = up(img, px(5))
+    # stars
+    st = np.zeros_like(img)
+    for _ in range(1400):
+        st[rng.integers(0, int(H * 0.7)), rng.integers(0, W)] = rng.uniform(0.4, 1.4)
+    img += blur(st, 1.0)[:, :, :1] * np.array([0.8, 0.9, 1.0], np.float32)
+    # layered dark ridgeline with a little neon rim light
+    for li, (amp, col, a) in enumerate(((0.07, MAG, 0.5), (0.11, CYA, 0.7), (0.16, INK, 1.0))):
+        x = np.arange(W) / W
+        ridge = (0.86 - li * 0.07) + amp * (0.5 * np.sin(x * (5 + li * 3) + li) + 0.3 * np.sin(x * (13 + li * 5) + li * 2) + 0.2 * np.sin(x * 29))
+        ridge_px = (ridge * H).astype(int)
+        yy = np.arange(H)[:, None]
+        mask = (yy >= ridge_px[None, :]).astype(np.float32)[:, :, None]
+        rim = np.exp(-((yy - ridge_px[None, :]) / px(4)) ** 2)[:, :, None] * col * 0.9 * (li < 2)
+        body = (INK * (0.9 - li * 0.2) + col * 0.05)
+        img = img * (1 - mask) + mask * body + rim
+    img = bloom(img, thresh=0.45, strength=0.9)
+    finish(img, rng, "4-aurora-smog.jpg", grain=0.02, aberr=2)
+
+
+# --------------------------------------------------------------------------
+# 5. BOKEH WINDOW — rain-fogged window onto out-of-focus neon city lights
+# --------------------------------------------------------------------------
+def bokeh_window():
+    rng = np.random.default_rng(55)
+    t = np.linspace(0, 1, H, dtype=np.float32)[:, None, None]
+    base = INK * 1.2 + VIO * 0.7 * t ** 1.5 + MAG * 0.12 * np.exp(-((t - 0.8) ** 2) / 0.02)
+    img = np.broadcast_to(base, (H, W, 3)).copy()
+    for layer, (n, rmin, rmax, soft, gain) in enumerate(((70, 120, 260, 10, 0.55), (150, 50, 130, 4, 0.7), (260, 18, 60, 1.5, 0.8))):
+        im = Image.new("RGB", (W, H))
+        d = ImageDraw.Draw(im)
+        for _ in range(n):
+            r = px(rng.integers(rmin, rmax))
+            x, y = rng.integers(0, W), int(H * rng.beta(2.2, 1.6))
+            c = NEON[rng.integers(0, 3)] * rng.uniform(0.35, 1.0) * (0.4 if rng.random() < 0.3 else 1)
+            fill = tuple(int(q * 255 * 0.55) for q in c)
+            rim = tuple(int(q * 255) for q in c)
+            d.ellipse([x - r, y - r, x + r, y + r], fill=fill, outline=rim, width=max(1, r // 14))
+        img += blur(np.asarray(im, np.float32) / 255, px(soft)) * gain
+    # condensation: slow vertical droplet trails
+    dr = Image.new("RGB", (W, H))
+    dd = ImageDraw.Draw(dr)
+    for _ in range(int(380 * S + 60)):
+        x, y0 = rng.integers(0, W), rng.integers(0, H)
+        ln = px(rng.integers(120, 520))
+        c = tuple(int(q * 255 * 0.22) for q in (CYA * 0.6 + 0.4))
+        dd.line([x, y0, x + rng.integers(-6, 6), y0 + ln], fill=c, width=px(rng.integers(2, 6)))
+        dd.ellipse([x - px(7), y0 + ln - px(7), x + px(7), y0 + ln + px(9)], fill=tuple(int(q * 255 * 0.45) for q in (CYA * 0.6 + 0.4)))
+    img += blur(np.asarray(dr, np.float32) / 255, px(2))
+    img = bloom(img, thresh=0.5, strength=0.5)
+    finish(img, rng, "5-bokeh-window.jpg", grain=0.022, aberr=3)
+
+
+# --------------------------------------------------------------------------
+# 6. WIREFRAME TERRAIN — neon vector mountains under a radioactive sun
+# --------------------------------------------------------------------------
+def wireframe_terrain():
+    rng = np.random.default_rng(1984)
+    horizon = int(H * 0.46)
+    t = np.linspace(0, 1, H, dtype=np.float32)[:, None, None]
+    img = INK * 1.1 + VIO * 0.8 * np.clip(t * 1.7, 0, 1) ** 2 + MAG * 0.5 * np.exp(-((t - 0.44) ** 2) / 0.006)
+    img = np.broadcast_to(img, (H, W, 3)).copy()
+    # sun: radioactive green disc with scan slits
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    sx, sy, sr = W * 0.5, horizon - px(30), px(430)
+    dist = np.sqrt((xx - sx) ** 2 + (yy - sy) ** 2)
+    sun = np.clip((sr - dist) / px(3), 0, 1)
+    slits = ((yy - sy) / px(26)) % 1.0
+    cut = np.where((yy > sy - px(80)), (slits > 0.25 + 0.6 * np.clip((yy - sy) / sr, 0, 1)), 1.0)
+    grad = ramp(np.clip((yy - (sy - sr)) / (2 * sr), 0, 1), [(0, GRN), (0.55, CYA), (1, MAG)])
+    img += grad * (sun * cut)[:, :, None] * 1.3
+    img = np.where((yy > horizon)[:, :, None], INK * 1.0, img)
+
+    scene = Image.fromarray(np.clip(img * 255, 0, 255).astype(np.uint8))
+    d = ImageDraw.Draw(scene)
+    rows = 46
+    xs = np.linspace(-1.6, 1.6, 420)
+    for i in range(rows):
+        z = (1 - i / rows)  # 1 = far, 0 = near
+        zz = z ** 1.9
+        ypos = horizon + (H - horizon) * (1 - zz) ** 1.0 * 1.0
+        scale = 0.18 + (1 - zz) * 1.75
+        # mountains: strong at the sides, calm valley in the middle
+        amp = (np.abs(xs) ** 1.6) * 0.55 + 0.03
+        hgt = amp * (0.6 * np.sin(xs * 5.0 + i * 0.27) + 0.4 * np.sin(xs * 11.0 - i * 0.43) + 0.9)
+        pts = [(W / 2 + x * scale * W * 0.5, ypos - hh * scale * H * 0.38) for x, hh in zip(xs, hgt)]
+        poly = pts + [(pts[-1][0], H + 5), (pts[0][0], H + 5)]
+        d.polygon(poly, fill=(5, 2, 12))
+        k = (1 - z)
+        col = MAG * (1 - k) + CYA * k
+        if i % 9 == 4:
+            col = GRN
+        d.line(pts, fill=tuple(int(c * 255) for c in np.clip(col, 0, 1)), width=px(2 + 3 * k))
+    img = np.asarray(scene, np.float32) / 255
+    # near-camera cross lines on the plain for a grid read
+    img = bloom(img * 1.25, thresh=0.4, strength=1.1)
+    finish(img, rng, "6-wireframe-terrain.jpg", aberr=3)
+
+
+# --------------------------------------------------------------------------
+# 7. PLASMA INK — marbled neon ink swirling in black water
+# --------------------------------------------------------------------------
+def plasma_ink():
+    rng = np.random.default_rng(23)
+    u, v, h, w = lowres_grid(1600)
+    px_, py_ = u * 1.5, v * 1.5
+    for k in range(5):  # iterated domain warp = marbling
+        px_, py_ = px_ + 0.55 * np.sin(py_ * 2.3 + k * 1.7 + 0.5), py_ + 0.55 * np.sin(px_ * 2.1 - k * 1.3 + 1.2)
+    f = 0.5 + 0.5 * np.sin(px_ * 2.6 + py_ * 1.9)
+    g = 0.5 + 0.5 * np.sin(py_ * 3.1 - px_ * 1.4 + 2.0)
+    stops = [(0.0, INK), (0.30, INK * 1.5 + VIO * 0.6), (0.52, MAG * 0.95), (0.66, CYA), (0.80, GRN), (1.0, INK)]
+    col = ramp(f, stops)
+    edge = np.exp(-((g - 0.5) ** 2) / 0.012)[:, :, None]  # bright vein lines
+    img = col * (0.35 + 0.65 * g[:, :, None] ** 1.5) + edge * MAG * 0.55
+    img = up(np.clip(img, 0, 3) / 3) * 3
+    img = blur(img, px(2))
+    img = bloom(img, thresh=0.5, strength=0.6)
+    finish(img, rng, "7-plasma-ink.jpg", grain=0.02, aberr=3)
+
+
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
-    which = sys.argv[4:] or ["rain", "storm", "core"]
-    if "rain" in which:
-        rain_district()
-    if "storm" in which:
-        datastorm()
-    if "core" in which:
-        reactor_core()
+    jobs = {"liquid": liquid_neon, "rain": rain_district, "storm": datastorm, "core": reactor_core,
+            "aurora": aurora_smog, "bokeh": bokeh_window, "terrain": wireframe_terrain, "ink": plasma_ink}
+    for name in (sys.argv[4:] or list(jobs)):
+        jobs[name]()
