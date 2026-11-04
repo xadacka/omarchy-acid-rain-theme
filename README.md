@@ -6,6 +6,8 @@ Think megacity downpour, holo-signage and a leaking reactor.
 
 ![Acid Rain wallpapers](preview.png)
 
+![Acid Rain desktop: btop, fastfetch and terminals](screenshot.png)
+
 ## Install
 
 ```bash
